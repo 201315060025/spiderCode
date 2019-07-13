@@ -5,8 +5,6 @@
 2: 根据饮品店list 循环获取每家店的详情
 """
 import time
-import random
-import requests
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -40,7 +38,7 @@ page_comment_header = {'Host': 'www.dianping.com',
                 'Accept-Language': 'zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2',
                 'Accept-Encoding': 'gzip, deflate',
                 'Connection': 'keep-alive',
-                'Cookie': '_lxsdk_cuid=16aecf36807c8-03788c4e37927e-4c312d7d-100200-16aecf36808c8; _lxsdk=16aecf36807c8-03788c4e37927e-4c312d7d-100200-16aecf36808c8; _hc.v=1c5d904d-e762-ab71-daf7-207f41ee7b11.1558753536; cy=175; cye=zhoukou; s_ViewType=10; _dp.ac.v=68ecf50b-8b9f-4522-a731-7a406ddaff80; dper=260cf7b274ef035c259b9a8a0986f5f28060dad0536527b70ca91836fc6da20720e47c884c2514a3a0f15b8e3f6e59c04a4119159962b6e9dd7ebe491853afa1d78fa5722e415c954dc3688d1560efe61386eea649ba23e0c5fc5d2e9fed59f5; ua=dpuser_9764478807; ctu=4005ec8968b9429cf57db52d599901b198cd1ec6a3175627f7d3242f5cf02981; aburl=1; Hm_lvt_dbeeb675516927da776beeb1d9802bd4=1561792912; ll=7fd06e815b796be3df069dec7836c3df; _lxsdk_s=16bcb7fd326-1ac-935-e82%7C%7C370; _lx_utm=utm_source%3DBaidu%26utm_medium%3Dorganic',
+                'Cookie': '_lxsdk_cuid=16aecf36807c8-03788c4e37927e-4c312d7d-100200-16aecf36808c8; _lxsdk=16aecf36807c8-03788c4e37927e-4c312d7d-100200-16aecf36808c8; _hc.v=1c5d904d-e762-ab71-daf7-207f41ee7b11.1558753536; cy=175; cye=zhoukou; s_ViewType=10; _dp.ac.v=68ecf50b-8b9f-4522-a731-7a406ddaff80; dper=260cf7b274ef035c259b9a8a0986f5f28060dad0536527b70ca91836fc6da20720e47c884c2514a3a0f15b8e3f6e59c04a4119159962b6e9dd7ebe491853afa1d78fa5722e415c954dc3688d1560efe61386eea649ba23e0c5fc5d2e9fed59f5; ua=dpuser_9764478807; ctu=4005ec8968b9429cf57db52d599901b198cd1ec6a3175627f7d3242f5cf02981; aburl=1; Hm_lvt_dbeeb675516927da776beeb1d9802bd4=1561792912; ll=7fd06e815b796be3df069dec7836c3df; _lx_utm=utm_source%3DBaidu%26utm_medium%3Dorganic; _lxsdk_s=16bea34a300-c2c-9b0-5a6%7C%7C397',
                 'Upgrade-Insecure-Requests': '1'}
 
 def get_shop_list():
@@ -107,8 +105,6 @@ def get_shop_list_2():
         print(pg)
     df = pd.DataFrame({'shop_url': shop_list})
     df.to_csv(data_dir / 'shop_2.csv', index=False)
-
-
 
 
 def get_shop_detail(url, ip):
@@ -215,14 +211,47 @@ def get_shop_detail(url, ip):
     result_df.T.to_csv(base_dir / f"{shop_id}.csv", header=None)
 
 
-
-def get_shop_remark(url, is_first_page=True):
+def get_shop_remark(url):
     """获取商店评论"""
     # if is_first_page:
     shop_id = url.split('/')[-1]
-    url = url + '/review_all'
+    source_url = url + '/review_all'
+
+    remark_dir = base_dir.parent.joinpath('remark').joinpath(str(shop_id))
+    remark_dir.mkdir(parents=True, exist_ok=True)
+
+    page_df, total_page_index = loop_page_comment(source_url, 1)
+
+    if page_df.empty:
+        print(url, 'is null')
+        return pd.DataFrame()
+    page_df.to_csv(remark_dir / '1.csv', index=False)
+
+    if total_page_index:
+        print(f'{shop_id} is {total_page_index} page, and start loop get')
+        for page in range(2, int(total_page_index)+1):
+            shop_page_file = remark_dir / f'{str(page)}.csv'
+            if shop_page_file.exists():
+                continue
+            page_df, _ = loop_page_comment(source_url, page)
+            if page_df.empty:
+                print(url, page, 'is null..')
+                continue
+
+            page_df.to_csv(shop_page_file, index=False)
+            time.sleep(10)
+    # result_df = pd.concat(page_df_list, axis=0, ignore_index=False)
+    # result_df.to_csv(remark_file, index=False)
+
+
+def loop_page_comment(url, page):
+    """获取每页每页评论"""
+
+    if page != 1:
+        url = url + f'/p{page}'
 
     header3 = page_comment_header
+    header3['User-Agent'] = UserAgent().random
 
     response = session.get(url, headers=header3)
     if response.status_code != 200:
@@ -231,9 +260,7 @@ def get_shop_remark(url, is_first_page=True):
     if not response.html.find('.reviews-items ul li'):
         print('not comment..')
 
-
     li_list = list()
-    remark_df_list = list()
     for li in response.html.find('.reviews-items ul li .main-review'):
         # main_review = HTML(html=response.html.find('.reviews-items ul li .main-review')[0].html)
         main_review = HTML(html=li.html)
@@ -262,81 +289,15 @@ def get_shop_remark(url, is_first_page=True):
             remark_time = main_review.find('.misc-info .time')[0].text
 
         li_list.append((comment_user, XingJi, comment_content,remark_time))
-
     li_df = pd.DataFrame()
     if li_list:
-        # li_df = pd.DataFrame({'comment_user':comment_user, 'XingJi':XingJi, 'comment_content': comment_content, 'remark_time':remark_time})
         li_df = pd.DataFrame(li_list, columns=['comment_user', 'XingJi', 'comment_content', 'remark_time'])
-    remark_df_list.append(li_df)
-
+    total_page = 0
     # is more page remark
-    if response.html.find('.reviews-pages'):
+    if response.html.find('.reviews-pages') and page == 1:
         total_page = response.html.find('.reviews-pages a')[-2].text
-        start_page = 2
-        for page in range(2, int(total_page)+1):
-            df = loop_page_comment(url, page)
 
-            remark_df_list.append(df)
-
-    remark_df = pd.concat(remark_df_list, axis=0, ignore_index=False)
-
-    # save
-
-    
-
-def loop_page_comment(url, page):
-    """获取每页每页评论"""
-    url = url + f'/p{page}'
-
-    header3 = page_comment_header
-    header3['User-Agent'] = UserAgent().random
-
-    response = session.get(url, headers=header3)
-    if response.status_code != 200:
-        print('response Error..')
-        return None
-    if not response.html.find('.reviews-items ul li'):
-        print('not comment..')
-
-    li_list = list()
-    for li in response.html.find('.reviews-items ul li'):
-        main_review = HTML(html=response.html.find('.reviews-items ul li .main-review')[0].html)
-
-        # people
-        comment_user = np.nan
-        if main_review.find('.dper-info a'):
-            comment_user = main_review.find('.dper-info a')[0].text
-
-        # star
-        XingJi = np.nan
-        if main_review.find('.review-rank span'):
-            XingJi = main_review.find('.review-rank span')[0].attrs['class'][1]
-
-        # content
-        comment_content = np.nan
-        if main_review.find('.review-words'):
-            comment_content = comment_content.find('.review-words')[0].text
-
-        if main_review.find('.review-truncated-words .more-words'):
-            comment_content = main_review.find('.review-truncated-words .more-words').text
-
-        # remark time
-        remark_time = np.nan
-        if main_review.find('.misc-info .time'):
-            remark_time = main_review.find('.misc-info .time')[0].text
-
-        li_list.append((comment_user, XingJi, comment_content, remark_time))
-
-    li_df = pd.DataFrame()
-    if li_list:
-        li_df = pd.DataFrame({'comment_user': comment_user, 'XingJi': XingJi, 'comment_content': comment_content,
-                              'remark_time': remark_time})
-    return li_df
-
-
-
-
-
+    return li_df, total_page
 
 
 if __name__ == '__main__':
@@ -378,6 +339,7 @@ if __name__ == '__main__':
     # -- 获取评论内容 start
     comment_shop_url = pd.read_csv(data_dir / 'shop_2.csv')
     for index, u in enumerate(list(comment_shop_url['shop_url'])):
-        u = r'http://www.dianping.com/shop/110587881'
-        shop_id = u.split('/')[-1]
+        # u = r'http://www.dianping.com/shop/110587881'
         get_shop_remark(u)
+        print(u, 'is end..')
+        time.sleep(10)
