@@ -1,7 +1,7 @@
 class SMSConfig:
     secretId = "***"
     secretKey = "***"
-    SdkAppId = "1400565808"
+    SdkAppId = "***"
     signName = "程序员开发宝典"
     templateId = "***"
     sendPhone = ["+***"]
